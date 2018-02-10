@@ -8,6 +8,9 @@ By default, the script will not show failed login attempts. To view failed login
 
 A progress bar will update in real time to let you know how the attack is progressing. There's nothing more frustrating than a bruteforcer that doesn't provide any feedback as it's running.
 
+# Output
+![honey badger mode](https://user-images.githubusercontent.com/11075149/33751087-62af2cec-dba6-11e7-9924-ae7445125768.png)
+
 ## Requirements
 The impacket library is required in order to run this script.
 ```
@@ -21,6 +24,7 @@ https://github.com/CoreSecurity/impacket
 
 ## Example Usage:
 users.txt = Unique usernames separated by new lines
+
 pass.txt = Unique passwords separated by new lines
 ```
 ./mmcbrute.py -t 10.10.10.10 -d DOMAIN -u users.txt -p pass.txt
