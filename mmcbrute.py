@@ -78,7 +78,12 @@ class MMCBrute(object):
 			user = user[-1].strip()
 			if self.user_as_pass:
 				self.update_progress()
-				self.login(self.domain, user, user, smb_connection)
+				next_user = self.login(self.domain, user, user, smb_connection)
+				if next_user:
+					# Restablish smb_connection to avoid false positves
+					smb_connection.close()
+					smb_connection = SMBConnection(self.target, self.target)
+					continue
 
 			if self.passwords:
 				self.passwords.seek(os.SEEK_SET)
@@ -86,6 +91,9 @@ class MMCBrute(object):
 					self.update_progress()
 					next_user = self.login(self.domain, user, password[-1].strip(), smb_connection)
 					if next_user:
+						# Restablish smb_connection to avoid false positves
+						smb_connection.close()
+						smb_connection = SMBConnection(self.target, self.target)
 						break
 
 	def login(self, domain, username, password, smb_connection):
