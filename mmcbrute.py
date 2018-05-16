@@ -119,8 +119,14 @@ class MMCBrute(object):
 				print "\033[93m[-] Account Locked Out {0}\033[0m".format(attempt)
 				if not self.honeybadger:
 					self.log.info(
-						'\033[94m[!] Honey Badger mode not enabled. Exiting to prevent further lockouts..\033[0m')
-					sys.exit(os.EX_SOFTWARE)
+						'\033[94m[!] Honey Badger mode not enabled. Halting to prevent further lockouts..\033[0m')
+					answer = str(raw_input('\033[94m[!] Would you like to proceed with the bruteforce? (Y/N) '))
+                                        if answer.lower() in ["y", "yes", ""]:
+                                                self.log.info('\033[93m[*] Resuming...')
+                                                return False
+                                        else:
+                                             	self.log.info('\033[91m[-]Exiting...')
+                                                sys.exit(os.EX_SOFTWARE)
 
 			elif 'STATUS_PASSWORD_MUST_CHANGE' in msg:
 				self.log.info("\033[92m[+] Success (User never logged in to change password) {0}\033[0m".format(attempt))
