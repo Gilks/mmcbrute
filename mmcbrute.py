@@ -91,7 +91,6 @@ class MMCBrute(object):
 		sys.stdout.flush()
 
 	def run(self):
-		self.targets.seek(os.SEEK_SET)
 		for target in self.targets:
 			target = target.strip()
 			self.target = target
