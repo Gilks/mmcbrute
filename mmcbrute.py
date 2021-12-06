@@ -117,8 +117,6 @@ class MMCBrute(object):
 							smb_connection.close()
 							smb_connection = SMBConnection(self.target, self.target)
 							break
-			self.usernames.seek(os.SEEK_SET)
-			self.passwords.seek(os.SEEK_SET)
 
 	def login(self, target, domain, username, password, smb_connection):
 		attempt = f"{domain}/{username}:{password}"
