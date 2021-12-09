@@ -14,7 +14,7 @@ A progress bar will update in real time to let you know how the attack is progre
 ## Requirements
 The impacket library is required in order to run this script.
 ```
-pip2 install impacket
+pip3 install impacket
 ```
 
 If that fails, you can get the library from here.
@@ -23,9 +23,13 @@ https://github.com/CoreSecurity/impacket
 ```
 
 ## Example Usage:
+
+targets.txt = Unique hosts separated by new lines
+
 users.txt = Unique usernames separated by new lines
 
 pass.txt = Unique passwords separated by new lines
+
 ```
-./mmcbrute.py -t 10.10.10.10 -d DOMAIN -u users.txt -p pass.txt
+./mmcbrute.py -t targets.txt -d DOMAIN -u users.txt -p pass.txt
 ```
