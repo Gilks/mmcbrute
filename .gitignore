@@ -1,0 +1,11 @@
+.idea
+.idea/*
+venv
+venv/*
+logs
+logs/*
+*.bak
+*.txt
+*.list
+*.log
+*.creds
