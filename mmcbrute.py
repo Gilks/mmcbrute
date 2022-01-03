@@ -81,8 +81,6 @@ class MMCBrute(object):
 		self.len_passwords = 0
 		self.len_targets = 1
 
-
-
 		if passwords is not None:
 			self.passwords = open(passwords, 'r')
 			self.len_passwords = sum((1 for _ in self.passwords))
@@ -197,6 +195,11 @@ class MMCBrute(object):
 	def end(self):
 		print() # (Cleans up output and log)
 		self.logger.info(f"\033[93mFinished at:\t\t{get_timestamp()}\033[0m")
+		for f in [self.usernames, self.target, self.passwords]:
+			try:
+				f.close()
+			except AttributeError:
+				pass
 
 	def info(self):
 		self.logger.info(f"\033[93mStarted at:\t\t{get_timestamp()}\033[0m")
