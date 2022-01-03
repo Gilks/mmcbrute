@@ -58,7 +58,7 @@ class LoggingAdapter(logging.LoggerAdapter):
 		log_true = kwargs.pop('log', self.extra['log'])
 		creds = kwargs.pop('creds', self.extra['creds'])
 		if timestamp_true:
-			msg = f"{datetime.datetime.now().astimezone().strftime('[%Y-%m-%d %I:%M:%S %p %z]')} {msg}"
+			msg = f"{datetime.datetime.utcnow().strftime('[%Y-%m-%d %H:%M:%S UTC]')} {msg}"
 		if log_true:
 			write(msg, output_log)
 		if creds:
@@ -73,7 +73,7 @@ class MMCBrute(object):
 		self.usernames.seek(os.SEEK_SET)
 		self.domain = domain
 		self.target = target
-		self.targets = target
+		self.targets = [target]
 		self.honeybadger = honeybadger
 		self.verbose = verbose
 		self.user_as_pass = user_as_pass
@@ -121,7 +121,7 @@ class MMCBrute(object):
 
 	def update_progress(self):
 		self.count += 1
-		sys.stdout.write(f"Progress: {self.count}/{self.totals} ({(100 * self.count / self.totals)}%)  \r")
+		sys.stdout.write(f"[+]Progress: {self.count}/{self.totals} ({round((100 * self.count / self.totals), 2)}%) {' ' * 10}\r")
 		sys.stdout.flush()
 
 	def run(self):
@@ -212,7 +212,7 @@ class MMCBrute(object):
 		self.log.info(f"Target count:\t\t{self.len_targets}", log=True)
 		self.log.info(f"Username count:\t\t{self.len_usernames}", log=True)
 		self.log.info(f"Password count:\t\t{self.len_passwords}", log=True)
-		self.log.info(f"Estimated attempts:\t{self.len_passwords}", log=True)
+		self.log.info(f"Estimated attempts:\t{self.totals}", log=True)
 		self.log.info(f"User-as-Pass Mode:\t{self.user_as_pass}", log=True)
 		self.log.info(f"Honey Badger Mode:\t{self.honeybadger}", log=True)
 		self.log.info(f"Verbose:\t\t{self.verbose}", log=True)
@@ -252,9 +252,9 @@ if __name__ == '__main__':
 
 	# Roll existing logs:
 	if is_readable_file(options.output_log):
-		shutil.move(options.output_log, f"./logs/mmcbrute.{datetime.datetime.now().strftime('%Y%m%d_%I%M%p')}.log")
+		shutil.move(options.output_log, f"./logs/mmcbrute.{datetime.datetime.utcnow().strftime('%Y%m%d_%H%M')}.log")
 	if is_readable_file(options.output_creds):
-		shutil.move(options.output_creds, f"./logs/creds.{datetime.datetime.now().strftime('%Y%m%d_%I%M%p')}.log")
+		shutil.move(options.output_creds, f"./logs/creds.{datetime.datetime.utcnow().strftime('%Y%m%d_%H%M')}.log")
 
 	brute = MMCBrute.from_args(options)
 	try:
