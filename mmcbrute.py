@@ -108,7 +108,7 @@ class MMCBrute(object):
 
 	def update_progress(self):
 		self.count += 1
-		sys.stdout.write(f"\033[33m[+] Progress:\t\t{self.count}/{self.totals} ({round((100 * self.count / self.totals), 2)}%) {' ' * 10}\r\033[0m")
+		sys.stdout.write(f"\033[93m[+] Progress:\t\t{self.count}/{self.totals} ({round((100 * self.count / self.totals), 2)}%) {' ' * 10}\r\033[0m")
 		sys.stdout.flush()
 
 	def write_creds(self, msg=None):
@@ -196,10 +196,10 @@ class MMCBrute(object):
 
 	def end(self):
 		print() # (Cleans up output and log)
-		self.logger.info(f"\033[94mFinished at:\t\t{get_timestamp()}\033[0m")
+		self.logger.info(f"\033[93mFinished at:\t\t{get_timestamp()}\033[0m")
 
 	def info(self):
-		self.logger.info(f"\033[94mStarted at:\t\t{get_timestamp()}\033[0m")
+		self.logger.info(f"\033[93mStarted at:\t\t{get_timestamp()}\033[0m")
 		self.logger.info(f"\033[94mTarget:\t\t\t{self.target}\033[0m")
 		self.logger.info(f"\033[94mTarget count:\t\t{self.len_targets}\033[0m")
 		self.logger.info(f"\033[94mUsername count:\t\t{self.len_usernames}\033[0m")
