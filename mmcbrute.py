@@ -165,7 +165,7 @@ class MMCBrute(object):
 				if not self.honeybadger:
 					self.logger.info(
 						'\033[94m[!] Honey Badger mode not enabled. Halting to prevent further lockouts..\033[0m')
-					answer = str(raw_input('\033[94m[!] Would you like to proceed with the bruteforce? (Y/N) '))
+					answer = str(input('\033[94m[!] Would you like to proceed with the bruteforce? (Y/N) '))
 					if answer.lower() in ["y", "yes", ""]:
 						self.logger.info('\033[93m[*] Resuming...')
 						return False
